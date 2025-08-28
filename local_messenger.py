@@ -1,4 +1,4 @@
-# local_messenger.py (Version 2)
+# local_messenger.py
 
 import socket
 import threading
@@ -7,96 +7,73 @@ import time
 import os
 
 # --- Configuration ---
+# The port for discovering other users on the network.
 DISCOVERY_PORT = 50000
+# The port for TCP communication (chat and file transfer).
 TCP_PORT = 50001
-BUFFER_SIZE = 4096
+# A buffer size for receiving data.
+BUFFER_SIZE = 4096 
+# The username for this instance of the application. Will be set by user input.
 MY_USERNAME = ""
-# --- NEW --- Time in seconds before a user is considered offline.
-USER_TIMEOUT_SECONDS = 15 
 
 # --- Shared Data Structures ---
+# A dictionary to store information about other online users.
+# Format: { 'username': {'ip': '192.168.1.10', 'last_seen': 1662560000.0} }
 online_users = {}
+# A lock to prevent race conditions when multiple threads access online_users.
 lock = threading.Lock()
 
 # --- Peer Discovery (UDP) ---
 
-def send_broadcast(status="online"):
+def send_broadcast():
     """
-    This function now accepts a status to indicate online or offline presence.
+    This function runs in a separate thread and periodically sends a broadcast message
+    to the local network to announce our presence.
     """
+    # Create a UDP socket.
     broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Enable the broadcast option on the socket.
     broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
+    # Prepare the message we want to send.
     message = json.dumps({
         "username": MY_USERNAME,
-        "status": status  # --- NEW --- Status can be 'online' or 'offline'
+        "status": "online"
     })
-    
-    # Send the message once.
-    broadcast_socket.sendto(message.encode('utf-8'), ('<broadcast>', DISCOVERY_PORT))
-    broadcast_socket.close()
 
-def broadcast_online_presence():
-    """
-    This function runs in a separate thread and periodically sends an 'online'
-    broadcast message to the local network to announce our presence.
-    """
     while True:
-        send_broadcast(status="online")
-        time.sleep(5)
+        # Send the message to the broadcast address on the discovery port.
+        # '<broadcast>' is a special address that sends to 255.255.255.255.
+        broadcast_socket.sendto(message.encode('utf-8'), ('<broadcast>', DISCOVERY_PORT))
+        time.sleep(5) # Announce our presence every 5 seconds.
 
 def listen_for_peers():
     """
-    Listens for broadcast messages and updates the user list.
-    --- NEW --- Now handles 'offline' messages to remove users instantly.
+    This function runs in a separate thread and listens for broadcast messages
+    from other peers to update our list of online users.
     """
+    # Create a UDP socket to listen for messages.
     listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Bind the socket to all available network interfaces on the discovery port.
     listen_socket.bind(('', DISCOVERY_PORT))
 
     while True:
+        # Wait to receive data.
         data, addr = listen_socket.recvfrom(1024)
         message = json.loads(data.decode('utf-8'))
         
-        username = message.get("username")
-        status = message.get("status")
-
-        if not username or username == MY_USERNAME:
+        # We don't want to add ourselves to the list.
+        if message["username"] == MY_USERNAME:
             continue
 
         ip_address = addr[0]
         
+        # Use the lock to safely update the shared user list.
         with lock:
-            if status == "online":
-                online_users[username] = {
-                    "ip": ip_address,
-                    "last_seen": time.time()
-                }
-            elif status == "offline":
-                if username in online_users:
-                    del online_users[username]
-                    print(f"\n[*] {username} has gone offline.")
-                    print("> ", end="")
-
-def cleanup_inactive_users():
-    """
-    --- NEW ---
-    This function runs in a separate thread to periodically remove users
-    who haven't sent a broadcast recently (i.e., they timed out).
-    """
-    while True:
-        time.sleep(10) # Check every 10 seconds
-        with lock:
-            current_time = time.time()
-            # Create a list of users to remove to avoid modifying the dict while iterating
-            users_to_remove = []
-            for user, info in online_users.items():
-                if current_time - info['last_seen'] > USER_TIMEOUT_SECONDS:
-                    users_to_remove.append(user)
-            
-            for user in users_to_remove:
-                del online_users[user]
-                print(f"\n[*] {user} timed out and was removed from the list.")
-                print("> ", end="")
+            online_users[message["username"]] = {
+                "ip": ip_address,
+                "last_seen": time.time()
+            }
 
 # --- Reliable Communication (TCP) ---
 
@@ -107,6 +84,7 @@ def handle_client(conn, addr):
     """
     print(f"\n[+] Accepted connection from {addr[0]}:{addr[1]}")
     try:
+        # Receive the initial message header.
         header_data = conn.recv(BUFFER_SIZE)
         if not header_data:
             return
@@ -116,18 +94,21 @@ def handle_client(conn, addr):
 
         if msg_type == "message":
             print(f"\n[Message from {header['username']}]: {header['payload']}")
-            print("> ", end="")
+            print("> ", end="") # Prompt user for next command
 
         elif msg_type == "file_offer":
             filename = header['filename']
             filesize = header['filesize']
             
+            # Ask the user for confirmation.
             print(f"\n[File offer from {header['username']}]: {filename} ({filesize} bytes).")
             user_input = input("Do you want to accept? (y/n): ").lower()
             
             if user_input == 'y':
+                # Send acceptance response.
                 conn.send(json.dumps({"response": "accept"}).encode('utf-8'))
                 
+                # Receive the file.
                 with open(filename, 'wb') as f:
                     bytes_received = 0
                     while bytes_received < filesize:
@@ -139,6 +120,7 @@ def handle_client(conn, addr):
                 print(f"\n[+] File '{filename}' received successfully.")
                 print("> ", end="")
             else:
+                # Send rejection response.
                 conn.send(json.dumps({"response": "reject"}).encode('utf-8'))
                 print("\n[-] File transfer rejected.")
                 print("> ", end="")
@@ -158,9 +140,11 @@ def run_tcp_server():
     print(f"[*] TCP Server listening on port {TCP_PORT}")
 
     while True:
+        # Wait for a client to connect.
         conn, addr = server_socket.accept()
+        # Once a client connects, create a new thread to handle them.
         client_handler = threading.Thread(target=handle_client, args=(conn, addr))
-        client_handler.start()
+        client_handler.start()   
 
 # --- User Interface (CLI) & Main Execution ---
 
@@ -208,6 +192,7 @@ def send_file(username, filepath):
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.connect((target_ip, TCP_PORT))
 
+            # 1. Send file offer header.
             header = json.dumps({
                 "type": "file_offer",
                 "username": MY_USERNAME,
@@ -216,11 +201,13 @@ def send_file(username, filepath):
             })
             client_socket.send(header.encode('utf-8'))
 
+            # 2. Wait for acceptance.
             response_data = client_socket.recv(1024)
             response = json.loads(response_data.decode('utf-8'))
 
             if response.get("response") == "accept":
                 print(f"[*] {username} accepted the file. Sending...")
+                # 3. Send the actual file.
                 with open(filepath, 'rb') as f:
                     while True:
                         bytes_read = f.read(BUFFER_SIZE)
@@ -258,60 +245,39 @@ def cli_input_loop():
 
         elif command == "msg" and len(parts) >= 3:
             username = parts[1]
-            # --- NEW --- Prevent self-messaging
-            if username == MY_USERNAME:
-                print("[!] You cannot send a message to yourself.")
-                continue
             message_text = " ".join(parts[2:])
             send_tcp_message(username, message_text)
-        
-        # --- NEW --- Broadcast command
-        elif command == "bcast" and len(parts) >= 2:
-            message_text = " ".join(parts[1:])
-            print("[*] Sending broadcast message...")
-            with lock:
-                for user in online_users:
-                    send_tcp_message(user, f"(Broadcast) {message_text}")
 
         elif command == "send" and len(parts) == 3:
             username = parts[1]
-            # --- NEW --- Prevent self-file-sending
-            if username == MY_USERNAME:
-                print("[!] You cannot send a file to yourself.")
-                continue
             filepath = parts[2]
             send_file(username, filepath)
 
         elif command == "exit":
-            # --- NEW --- Send a goodbye message before exiting
-            print("Sending goodbye message...")
-            send_broadcast(status="offline")
-            time.sleep(0.5) # Give the packet a moment to send
+            # A more graceful exit would send a "goodbye" broadcast.
             print("Exiting...")
             os._exit(0)
         else:
-            print("Unknown command. Try: list, msg, bcast, send, exit")
+            print("Unknown command. Try: list, msg <user> <message>, send <user> <filepath>, exit")
 
 if __name__ == "__main__":
     MY_USERNAME = input("Enter your username: ")
 
-    # Start all background threads as "daemon" threads.
-    broadcaster_thread = threading.Thread(target=broadcast_online_presence, daemon=True)
+    # Set all background threads as "daemon" threads.
+    # This means they will exit automatically when the main program exits.
+    
+    broadcaster_thread = threading.Thread(target=send_broadcast, daemon=True)
     listener_thread = threading.Thread(target=listen_for_peers, daemon=True)
     tcp_server_thread = threading.Thread(target=run_tcp_server, daemon=True)
-    # --- NEW --- Start the cleanup thread
-    cleanup_thread = threading.Thread(target=cleanup_inactive_users, daemon=True)
 
     broadcaster_thread.start()
     listener_thread.start()
     tcp_server_thread.start()
-    cleanup_thread.start()
     
     print(f"\nWelcome, {MY_USERNAME}! Your local messenger is running.")
     print("Type 'list' to see other users.")
     print("Type 'msg <user> <message>' to chat.")
-    print("Type 'bcast <message>' to message everyone.")
     print("Type 'send <user> <filepath>' to send a file.")
     print("Type 'exit' to close.\n")
 
-    cli_input_loop()
+    cli_input_loop() 
