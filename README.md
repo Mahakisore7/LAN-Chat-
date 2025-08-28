@@ -1,22 +1,20 @@
 # Local Messenger  
 
-A simple **peer-to-peer local network messenger** built with Python. This application uses **UDP broadcast** for peer discovery and **TCP** for reliable message/file transfer. It allows users on the same local network to chat, send broadcast messages, and share files — all without a central server.  
+A simple **peer-to-peer local network messenger** built with Python. This application uses **UDP broadcast** for peer discovery and **TCP** for reliable message/file transfer. It allows users on the same local network to chat and share files — all without a central server.  
 
 ---
 
 ## ✨ Features  
 - 🔍 **Automatic Peer Discovery** — detects online users in the local network.  
 - 💬 **Direct Messaging** — send messages to a specific user.  
-- 📢 **Broadcast Messaging** — send messages to all online users.  
 - 📂 **File Sharing** — send files to other users (with accept/reject option).  
-- 🕒 **User Timeout** — automatically removes users who are inactive for more than 15 seconds.  
-- 🚪 **Graceful Exit** — notifies others when you go offline.  
+- 🚪 **Graceful Exit** — allows you to leave the chat system cleanly.  
 
 ---
 
 ## ⚙️ How It Works  
 - **UDP Broadcast** (Port `50000`)  
-  - Used to announce presence (`online`) or departure (`offline`).  
+  - Used to announce presence (`online`).  
   - Periodic broadcasts ensure peers remain updated.  
 
 - **TCP Communication** (Port `50001`)  
@@ -24,7 +22,7 @@ A simple **peer-to-peer local network messenger** built with Python. This applic
 
 - **User Management**  
   - Each user is identified by a **username**.  
-  - Inactive users are auto-removed after `15 seconds`.  
+  - Online users are stored with their IP and last active timestamp.  
 
 ---
 
@@ -34,9 +32,8 @@ A simple **peer-to-peer local network messenger** built with Python. This applic
 |---------|-------|-------------|
 | `list` | `list` | Show online users. |
 | `msg` | `msg <user> <message>` | Send a private message. |
-| `bcast` | `bcast <message>` | Send a broadcast message to everyone. |
 | `send` | `send <user> <filepath>` | Send a file to a user. |
-| `exit` | `exit` | Exit the program gracefully (notifies peers). |
+| `exit` | `exit` | Exit the program. |
 
 ---
 
