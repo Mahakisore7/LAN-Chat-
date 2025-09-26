@@ -60,21 +60,34 @@ class NetworkCore:
                 header = header_data.decode()
                 parts = header.split("::")
                 data_type = parts[0]
-                sender_username = parts[-1] # The sender's username is now always the last part
 
                 if data_type == "MSG":
                     message = parts[1]
+                    sender_username = parts[2]
                     # Use the callback to safely update the GUI
                     self.message_received_callback(sender_username, message)
                 
                 elif data_type == "FILE":
-                    filename = parts[1]
+                    # --- THIS IS THE IMPROVED LOGIC ---
+                    filename = os.path.basename(parts[1]) # Sanitize filename for security
                     filesize = int(parts[2])
+                    sender_username = parts[3]
                     
+                    # 1. Define the directory structure
+                    download_dir = os.path.join("received_files", sender_username)
+                    
+                    # 2. Create the directories if they don't exist
+                    os.makedirs(download_dir, exist_ok=True)
+                    
+                    # 3. Construct the full, clean path to save the file
+                    save_path = os.path.join(download_dir, filename)
+                    # ------------------------------------
+
                     # Notify the GUI that a file is incoming
                     self.file_received_callback(sender_username, filename, filesize, "start")
 
-                    with open(filename, 'wb') as f:
+                    # Use the new save_path to open and write the file
+                    with open(save_path, 'wb') as f:
                         bytes_received = 0
                         while bytes_received < filesize:
                             chunk = client_socket.recv(4096)
@@ -143,3 +156,4 @@ class NetworkCore:
                 print(f"File '{filename}' sent successfully.")
         except Exception as e:
             print(f"[File Send] Error: {e}")
+
