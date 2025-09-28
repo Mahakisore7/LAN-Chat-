@@ -1,135 +1,113 @@
-# Decentralized Local Messenger
+# Secure LAN Messenger
 
-**Project Status: In Development**
+A decentralized, end-to-end encrypted chat and file-sharing application that works over a local network without requiring an internet connection. This project leverages fundamental networking concepts to create a private, serverless communication tool ideal for secure communication in environments where internet access is unavailable or undesirable.
 
 ## Overview
 
-The **Decentralized Local Messenger** is a zero-configuration, serverless messenger and file-sharing application designed to operate entirely on a local network. This project eliminates the dependency on internet connectivity and central servers, enabling fast, private, and robust communication for users on the same Wi-Fi network.
+In a world where most communication apps rely on centralized internet servers, Secure LAN Messenger takes a different approach: true peer-to-peer communication. This application allows users on the same Wi-Fi or local network to automatically discover each other, exchange encrypted messages, and (in future updates) share files directly. It’s designed to be a private, resilient communication tool that functions seamlessly even when the internet is down.
 
-### Project Goal & Motivation
+## Key Features
 
-The goal is to create a seamless communication and file-sharing tool that leverages the high-speed capabilities of local networks, bypassing the "Internet-First Trap" where data is unnecessarily routed through distant servers. This application is particularly valuable in offline or network-constrained environments, such as:
+- **Zero-Configuration Discovery**: Users are automatically discovered on the local network using UDP broadcasting, eliminating the need to manually enter IP addresses.
+- **End-to-End Encryption**: All messages are secured using 2048-bit RSA public-key cryptography. A message encrypted with a recipient’s public key can only be decrypted with their private key, ensuring complete privacy.
+- **Decentralized Identity**: Each user’s identity is based on a locally generated cryptographic key pair. No central authority or sign-up is required.
+- **Direct, Reliable Communication**: Chat (and future file transfers) use direct TCP connections, ensuring data arrives in the correct order without errors.
+- **Modern Graphical User Interface**: A clean, user-friendly interface built with CustomTkinter, featuring a dark mode and an intuitive layout.
+- **Organized File Transfers** (planned): Received files will be automatically sorted into directories based on the sender’s username (e.g., `received_files/Alice/report.pdf`).
 
-- Collaborative workspaces without internet access.
-- Secure, private communication within a local network.
-- Scenarios requiring high-speed, low-latency data exchange (e.g., file sharing in a classroom or office).
+## How It Works: The Technical Architecture
 
-By operating without servers or internet dependency, this tool ensures privacy and functionality even during internet outages.
+The application is built on a clean, multi-threaded architecture that separates core responsibilities into distinct modules for modularity and maintainability.
 
-## Current Progress: Foundational Components
+### 1. The Cryptography Core (`crypto_utils.py`)
+The security backbone of the application.
 
-The project currently consists of foundational components built in Python to demonstrate core network programming concepts. These components serve as the building blocks for the final application.
+- **Identity**: On first launch, a 2048-bit RSA key pair (public and private) is generated and saved locally in the `keys/` directory. The private key never leaves the user’s machine.
+- **Encryption**: Messages are encrypted using the recipient’s public key before being sent.
+- **Decryption**: Incoming encrypted messages are decrypted using the user’s private key.
 
-### 1. One-Way Communication (`sender.py` & `receiver.py`)
+### 2. The Discovery Service (`discovery.py`)
+The "radar" for finding other users on the network.
 
-**Purpose**: Master the basics of network communication.
+- **Broadcasting**: A dedicated thread sends UDP broadcast packets every 5 seconds, containing the user’s name, local IP address, and public key.
+- **Listening**: A separate thread listens on a specific UDP port for broadcast packets from other users.
+- **Peer Management**: Discovered users are added to a dynamic list of online peers. Users who haven’t broadcasted recently are timed out and removed.
 
-**Functionality**:
-- `sender.py` sends a single "Hello, World!" UDP packet to `receiver.py`.
-- `receiver.py` listens for the packet, prints it, and both programs exit.
+### 3. The Network Core (`network_core.py`)
+The "telephone" for reliable communication.
 
-**Concepts Learned**:
-- Creating and closing UDP sockets (`socket.socket`).
-- Binding a socket to a specific port (`socket.bind`).
-- Sending and receiving data (`socket.sendto`, `socket.recvfrom`).
-- Encoding/decoding strings to bytes for network transmission.
+- **TCP Server**: A thread runs a TCP server that listens for incoming connections (for messages or, in the future, files).
+- **Connection Handling**: When a peer connects, a new thread handles the connection, decrypts incoming data using the user’s private key, and passes messages to the GUI.
+- **TCP Client**: When sending a message, this module encrypts the message with the recipient’s public key, establishes a direct TCP connection, and sends the data.
 
-### 2. Two-Way Real-Time Chat (`walkie_talkie.py`)
+### 4. The Graphical User Interface (`gui_app.py`)
+The user-facing interface.
 
-**Purpose**: Build a persistent, real-time, two-way communication channel.
+- Coordinates backend services (discovery and network cores).
+- Periodically updates the sidebar with the list of online users from the discovery service.
+- Provides an intuitive interface for selecting a user, typing messages, and displaying decrypted conversations.
+- Uses a thread-safe queue to receive messages from networking threads and safely update the GUI, preventing crashes.
 
-**Functionality**:
-- A command-line chat program enabling continuous conversation between two users.
-- Limitation: Users must manually know each other's IP address and port.
+## Project Structure
 
-**Concepts Learned**:
-- Using infinite loops (`while True`) to maintain active network services.
-- Multi-threading with Python’s `threading` library to handle simultaneous tasks (listening for messages and accepting keyboard input).
-- Core principles of responsive network applications.
+```
+/Simple-LAN-Chat
+|-- gui_app.py             # Main application file, runs the GUI
+|-- network_core.py        # Handles all TCP communication (chat/files)
+|-- discovery.py           # Handles UDP-based peer discovery
+|-- crypto_utils.py        # Manages key generation and encryption/decryption
+|-- .gitignore             # Ignores sensitive/generated files
+|-- README.md              # This file
+|
+|-- keys/                  # (Auto-generated) Stores user’s private/public keys
+|   |-- private_key.pem
+|   `-- public_key.pem
+|
+`-- received_files/        # (Auto-generated) Stores received files
+    `-- sender_username/
+        `-- received_file.ext
+```
 
-### 3. Automatic Peer Discovery (`discovery.py`)
+## Setup and Installation
 
-**Purpose**: Enable zero-configuration by automatically discovering peers on the local network.
-
-**Functionality**:
-- A standalone service that detects other users running the application on the same Wi-Fi network.
-- Displays a continuously updated list of online users and their local IP addresses.
-
-**Concepts Learned**:
-- UDP Broadcasting to send packets to all devices on the local network using a broadcast address (`<broadcast>` or `255.255.255.255`).
-- Socket options (`SO_BROADCAST` for broadcasting, `SO_REUSEADDR` for testing multiple instances on the same port).
-- Building a robust, multi-threaded service with dedicated "Broadcaster" and "Listener" threads.
-
-## How to Run the Current Version
-
-The most advanced component is the `discovery.py` service. Follow these steps to test it:
-
-### Prerequisites
-- Python 3 installed.
-- All devices must be connected to the same Wi-Fi network.
-
-### Steps
-1. **Run the script**:
-   - Open a terminal and navigate to the project directory.
-   - Execute:
-     ```bash
-     python discovery.py
-     ```
-2. **Enter a username**:
-   - When prompted, type your username and press Enter.
-3. **Discover peers**:
-   - As other users on the same network run the script, their usernames and IP addresses will automatically appear in your terminal.
-
-## Next Steps
-
-The foundational components are complete, and the next phase involves integrating them into a cohesive application. Planned tasks include:
-
-1. **Integrate Discovery and Communication**:
-   - Combine `discovery.py` with a new communication module.
-   - Allow users to select a peer from the discovered list to initiate a chat or file transfer.
-
-2. **Switch to TCP for Reliability**:
-   - Use TCP sockets for chat and file-sharing to ensure reliable, error-checked data transfer (unlike UDP, which may lose packets).
-
-3. **Build the Main Application Loop**:
-   - Develop `main.py` to unify all components.
-   - Provide a user-friendly interface to view online users, select a peer, and start a chat or file transfer.
-
-## Installation
-
-1. Clone the repository:
+1. **Clone the repository**:
    ```bash
-   git clone <repository-url>
+   git clone <your-repository-url>
+   cd Simple-LAN-Chat
    ```
-2. Navigate to the project directory:
+
+2. **Create a virtual environment** (recommended):
    ```bash
-   cd decentralized-local-messenger
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
-3. Ensure Python 3 is installed:
+
+3. **Install required libraries**:
    ```bash
-   python --version
+   pip install customtkinter cryptography
    ```
-4. Run the desired script (e.g., `Discovery.py`) as described above.
+
+## How to Run
+
+1. Ensure all users are connected to the same Wi-Fi or local network.
+2. Run the main application:
+   ```bash
+   python gui_app.py
+   ```
+3. On first launch, the application generates a unique RSA key pair, saved in the `keys/` folder.
+4. Enter a username and start chatting securely!
+
+## Future Goals
+
+- [ ] Re-implement secure, end-to-end encrypted file transfers.
+- [ ] Add visual indicators for message delivery status (e.g., "Sent," "Delivered").
+- [ ] Allow users to set a custom profile picture.
+- [ ] Package the application into a standalone executable for easy distribution.
 
 ## Contributing
 
-Contributions are welcome! To contribute:
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix:
-   ```bash
-   git checkout -b feature-name
-   ```
-3. Commit your changes and push to your fork.
-4. Submit a pull request with a clear description of your changes.
+Contributions are welcome! Please fork the repository, create a feature branch, and submit a pull request. Ensure your code follows the project’s style and includes appropriate tests.
 
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
-
-## Contact
-
-For questions or feedback, please open an issue on the repository or contact the project maintainers.
-
----
-
-*This README will be updated as the project progresses toward the final integrated application.*
