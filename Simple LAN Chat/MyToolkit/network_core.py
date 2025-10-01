@@ -1,3 +1,5 @@
+# network_core.py
+
 import socket
 import threading
 import os
@@ -22,6 +24,7 @@ class NetworkCore:
 
     def stop(self):
         self.running = False
+        # Unblock the server accept call
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect(('127.0.0.1', TCP_PORT))
@@ -57,31 +60,29 @@ class NetworkCore:
                     encoded_message = parts[1]
                     encrypted_message = base64.b64decode(encoded_message)
                     decrypted_message = crypto_utils.decrypt_with_rsa(self.private_key, encrypted_message)
-                    self.message_callback(sender_username, decrypted_message)
+                    self.message_callback(sender_username, decrypted_message.decode('utf-8'))
                 
                 elif data_type == "FILE":
                     filename, filesize_str, encoded_aes_key = parts[1], parts[2], parts[3]
                     filesize = int(filesize_str)
                     
-                    # 1. Receiver does its time-consuming work
                     encrypted_aes_key = base64.b64decode(encoded_aes_key)
                     aes_key = crypto_utils.decrypt_with_rsa(self.private_key, encrypted_aes_key)
                     
-                    # --- NEW STEP: THE "READY" ACKNOWLEDGEMENT ---
-                    # 2. Receiver tells the sender, "I'm ready for the file now!"
+                    # --- HANDSHAKE PART 1: Receiver sends "READY" signal ---
                     client_socket.sendall(b"READY")
-                    # ----------------------------------------------
+                    # --------------------------------------------------------
                     
                     os.makedirs(f"received_files/{sender_username}", exist_ok=True)
                     filepath = os.path.join(f"received_files/{sender_username}", filename)
                     
                     self.file_callback("start", sender_username, filename)
                     
-                    # 3. Receiver starts listening for the file data
                     with open(filepath, "wb") as f:
                         bytes_received = 0
                         while bytes_received < filesize:
-                            encrypted_chunk = client_socket.recv(CHUNK_SIZE + 28)
+                            # AES-GCM adds 12 bytes for IV and 16 for the auth tag
+                            encrypted_chunk = client_socket.recv(CHUNK_SIZE + 28) 
                             if not encrypted_chunk: break
                             decrypted_chunk = crypto_utils.decrypt_file_chunk(aes_key, encrypted_chunk)
                             f.write(decrypted_chunk)
@@ -99,7 +100,7 @@ class NetworkCore:
             encrypted_message = crypto_utils.encrypt_with_rsa(target_public_key, message.encode('utf-8'))
             encoded_message = base64.b64encode(encrypted_message).decode('utf-8')
             header = f"MSG::{encoded_message}::{self.username}".encode()
-            threading.Thread(target=self._send_tcp_data, args=(target_ip, [header]), daemon=True).start()
+            threading.Thread(target=self._send_tcp_data, args=(target_ip, header), daemon=True).start()
         else:
             print(f"User '{target_username}' not found.")
             return False
@@ -123,37 +124,32 @@ class NetworkCore:
             
             header = f"FILE::{filename}::{filesize}::{encoded_aes_key}::{self.username}".encode()
 
-            threading.Thread(target=self._send_file_data, args=(target_ip, header, filepath, aes_key), daemon=True).start()
+            threading.Thread(target=self._send_file_data_robust, args=(target_ip, header, filepath, aes_key), daemon=True).start()
         else:
             print(f"User '{target_username}' not found.")
             return False
         return True
 
-    def _send_tcp_data(self, target_ip, data_list):
+    def _send_tcp_data(self, target_ip, data):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((target_ip, TCP_PORT))
-                for data in data_list:
-                    s.sendall(data)
+                s.sendall(data)
         except Exception as e:
             print(f"[TCP Send] Error: {e}")
             
-    def _send_file_data(self, target_ip, header, filepath, aes_key):
+    def _send_file_data_robust(self, target_ip, header, filepath, aes_key):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((target_ip, TCP_PORT))
-                
-                # 1. Sender sends the header
                 s.sendall(header)
                 
-                # --- NEW STEP: THE SYNCHRONIZATION ---
-                # 2. Sender now waits for the "READY" signal from the receiver
+                # --- HANDSHAKE PART 2: Sender waits for "READY" signal ---
                 confirmation = s.recv(1024)
                 if confirmation != b"READY":
-                    raise Exception("Receiver was not ready.")
-                # -----------------------------------------
+                    raise Exception("Receiver did not send READY confirmation.")
+                # ----------------------------------------------------------
                 
-                # 3. Only after getting the signal, sender starts streaming the file
                 with open(filepath, "rb") as f:
                     while True:
                         chunk = f.read(CHUNK_SIZE)
@@ -162,4 +158,3 @@ class NetworkCore:
                         s.sendall(encrypted_chunk)
         except Exception as e:
             print(f"[File Send] Error: {e}")
-

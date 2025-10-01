@@ -1,9 +1,5 @@
 # discovery.py
 
-# --- NO CHANGES NEEDED ---
-# This file remains exactly the same as the previous version.
-# I am including it here for completeness.
-
 import socket
 import threading
 import time
@@ -15,8 +11,10 @@ DISCOVERY_MESSAGE = "LOCAL_CHAT_DISCOVER_V2_SECURE"
 BROADCAST_INTERVAL = 5
 
 def get_lan_ip():
+    """Finds the local IP address of the machine."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
+        # Doesn't have to be reachable
         s.connect(('10.255.255.255', 1))
         IP = s.getsockname()[0]
     except Exception:
@@ -48,6 +46,7 @@ class Discovery:
     def get_online_users(self):
         with self.lock:
             current_time = time.time()
+            # Filter out users who haven't been heard from in a while
             active_users = {}
             for user, (ip, pub_key, last_seen) in self.online_users.items():
                 if current_time - last_seen < (BROADCAST_INTERVAL * 3):
@@ -77,7 +76,7 @@ class Discovery:
                 except socket.timeout:
                     continue
                 except Exception:
-                    pass
+                    pass # Ignore parsing errors from malformed packets
 
     def _broadcast_presence(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as s:

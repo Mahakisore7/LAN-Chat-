@@ -82,15 +82,16 @@ def generate_aes_key():
     return os.urandom(32) # AES-256 uses a 32-byte key
 
 def encrypt_file_chunk(aes_key, data):
-    """Encrypts a chunk of file data using AES."""
+    """Encrypts a chunk of file data using AES-GCM."""
     iv = os.urandom(12)  # Initialization vector, must be unique per encryption
     cipher = Cipher(algorithms.AES(aes_key), modes.GCM(iv), backend=default_backend())
     encryptor = cipher.encryptor()
     encrypted_data = encryptor.update(data) + encryptor.finalize()
-    return iv + encryptor.tag + encrypted_data # Prepend IV and tag for decryption
+    # Prepend IV and authentication tag for the receiver to use for decryption
+    return iv + encryptor.tag + encrypted_data
 
 def decrypt_file_chunk(aes_key, encrypted_data_with_iv_tag):
-    """Decrypts a chunk of file data using AES."""
+    """Decrypts a chunk of file data using AES-GCM."""
     iv = encrypted_data_with_iv_tag[:12]
     tag = encrypted_data_with_iv_tag[12:28]
     encrypted_data = encrypted_data_with_iv_tag[28:]
