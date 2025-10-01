@@ -1,5 +1,9 @@
 # discovery.py
 
+# --- NO CHANGES NEEDED ---
+# This file remains exactly the same as the previous version.
+# I am including it here for completeness.
+
 import socket
 import threading
 import time
