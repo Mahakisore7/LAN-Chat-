@@ -54,7 +54,6 @@ class NetworkCore:
                 sender_username = parts[-1]
 
                 if data_type == "MSG":
-                    # This part remains the same
                     encoded_message = parts[1]
                     encrypted_message = base64.b64decode(encoded_message)
                     decrypted_message = crypto_utils.decrypt_with_rsa(self.private_key, encrypted_message)
@@ -93,7 +92,6 @@ class NetworkCore:
             except Exception as e:
                 print(f"[Handler] Error: {e}")
 
-    # send_message function remains the same as before
     def send_message(self, target_username, message):
         users = self.discovery_service.get_online_users()
         if target_username in users:
@@ -101,14 +99,12 @@ class NetworkCore:
             encrypted_message = crypto_utils.encrypt_with_rsa(target_public_key, message.encode('utf-8'))
             encoded_message = base64.b64encode(encrypted_message).decode('utf-8')
             header = f"MSG::{encoded_message}::{self.username}".encode()
-            # We create a simple list for the helper function
             threading.Thread(target=self._send_tcp_data, args=(target_ip, [header]), daemon=True).start()
         else:
             print(f"User '{target_username}' not found.")
             return False
         return True
-    
-    # send_file is now handled by the more specific _send_file_data
+
     def send_file(self, target_username, filepath):
         if not os.path.exists(filepath):
             print(f"File not found: {filepath}")
@@ -133,7 +129,6 @@ class NetworkCore:
             return False
         return True
 
-    # This is a generic helper now, only used for simple messages
     def _send_tcp_data(self, target_ip, data_list):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -143,7 +138,6 @@ class NetworkCore:
         except Exception as e:
             print(f"[TCP Send] Error: {e}")
             
-    # This is the NEW, specific, robust function for sending files
     def _send_file_data(self, target_ip, header, filepath, aes_key):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
